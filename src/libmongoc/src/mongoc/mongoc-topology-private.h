@@ -96,6 +96,7 @@ typedef struct _mongoc_topology_t {
    mongoc_cond_t srv_polling_cond;
 
    bson_mutex_t mutex;
+   bson_rwlock_t rwlock;
    mongoc_cond_t cond_client;
    mongoc_topology_scanner_state_t scanner_state;
 

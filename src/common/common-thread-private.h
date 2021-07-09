@@ -56,6 +56,11 @@ BSON_BEGIN_DECLS
 #define bson_mutex_lock pthread_mutex_lock
 #define bson_mutex_t pthread_mutex_t
 #define bson_mutex_unlock pthread_mutex_unlock
+#define bson_rwlock_t pthread_rwlock_t
+#define bson_rwlock_init pthread_rwlock_init
+#define bson_rwlock_rdlock pthread_rwlock_rdlock
+#define bson_rwlock_wrlock pthread_rwlock_wrlock
+#define bson_rwlock_unlock pthread_rwlock_unlock
 
 #else
 typedef struct {

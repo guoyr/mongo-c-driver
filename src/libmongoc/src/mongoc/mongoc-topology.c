@@ -263,6 +263,8 @@ mongoc_topology_new (const mongoc_uri_t *uri, bool single_threaded)
 
    topology->uri = mongoc_uri_copy (uri);
 
+   bson_rwlock_init(&topology->rwlock, NULL);
+
    topology->single_threaded = single_threaded;
    if (single_threaded) {
       /* Server Selection Spec:
@@ -1515,7 +1517,7 @@ _mongoc_topology_push_server_session (mongoc_topology_t *topology,
 
    ENTRY;
 
-   bson_mutex_lock (&topology->mutex);
+   bson_rwlock_rdlock (&topology->rwlock);
 
    timeout = topology->description.session_timeout_minutes;
    loadbalanced = topology->description.type == MONGOC_TOPOLOGY_LOAD_BALANCED;
@@ -1526,8 +1528,20 @@ _mongoc_topology_push_server_session (mongoc_topology_t *topology,
       /* Sessions do not expire when the topology type is load balanced. */
       if (!loadbalanced && _mongoc_server_session_timed_out (ss, timeout)) {
          BSON_ASSERT (ss->next); /* silences clang scan-build */
-         CDL_DELETE (topology->session_pool, ss);
-         _mongoc_server_session_destroy (ss);
+
+         bson_rwlock_unlock(&topology->rwlock);
+         bson_rwlock_wrlock(&topology->rwlock);
+         if (topology->session_pool && topology->session_pool->prev) {
+             ss = topology->session_pool->prev;
+             if (_mongoc_server_session_timed_out (ss, timeout))
+                CDL_DELETE (topology->session_pool, ss);
+         }
+         bson_rwlock_unlock(&topology->rwlock);
+         bson_rwlock_rdlock (&topology->rwlock);
+
+          _mongoc_server_session_destroy (ss);
+
+
       } else {
          /* if ss is not timed out, sessions in front of it are ok too */
          break;
@@ -1551,11 +1565,16 @@ _mongoc_topology_push_server_session (mongoc_topology_t *topology,
       if (server_session->last_used_usec == SESSION_NEVER_USED) {
          _mongoc_server_session_destroy (server_session);
       } else {
-         CDL_PREPEND (topology->session_pool, server_session);
+          bson_rwlock_unlock(&topology->rwlock);
+          bson_rwlock_wrlock(&topology->rwlock);
+          if (topology->session_pool)
+            CDL_PREPEND (topology->session_pool, server_session);
+          bson_rwlock_unlock(&topology->rwlock);
+          bson_rwlock_rdlock (&topology->rwlock);
       }
    }
 
-   bson_mutex_unlock (&topology->mutex);
+   bson_rwlock_unlock (&topology->rwlock);
 
    EXIT;
 }
